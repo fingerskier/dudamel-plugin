@@ -1,6 +1,6 @@
 {
   "name": "dude-claude-plugin",
-  "version": "2026.2.7",
+  "version": "2026.2.8",
   "description": "Ultra-minimal RAG and cross-project memory for Claude CLI",
   "type": "module",
   "bin": {
@@ -11,7 +11,8 @@
   },
   "scripts": {
     "start": "node bin/dude-claude.js mcp",
-    "serve": "node bin/dude-claude.js serve"
+    "serve": "node bin/dude-claude.js serve",
+    "prepublishOnly": "node scripts/sync-plugin-version.cjs"
   },
   "keywords": [
     "claude",
