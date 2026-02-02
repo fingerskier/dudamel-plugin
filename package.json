@@ -1,0 +1,24 @@
+{
+  "name": "dude-claude-plugin",
+  "version": "1.0.0",
+  "description": "Ultra-minimal RAG and cross-project memory for Claude CLI",
+  "type": "module",
+  "bin": {
+    "dude-claude": "bin/dude-claude.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node bin/dude-claude.js mcp",
+    "serve": "node bin/dude-claude.js serve"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.24.2",
+    "better-sqlite3": "^11.8.1",
+    "sqlite-vec": "^0.1.6",
+    "@huggingface/transformers": "^3.4.1"
+  },
+  "license": "MIT"
+}
