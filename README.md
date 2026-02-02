@@ -19,3 +19,5 @@ A context multiplier plug-in for Claude CLI
   * CRUD issue ~ per project
   * CRID specification ~ per project
   * 
+* Local webserver to do manual CRUD
+
