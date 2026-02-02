@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dude Claude Plugin</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5; color: #333; line-height: 1.5;
+    }
+    header {
+      background: #1a1a2e; color: #fff; padding: 12px 24px;
+      display: flex; align-items: center; gap: 16px;
+    }
+    header h1 { font-size: 18px; font-weight: 600; }
+    header select, header input {
+      padding: 6px 10px; border: 1px solid #444; border-radius: 4px;
+      background: #16213e; color: #fff; font-size: 14px;
+    }
+    header input::placeholder { color: #888; }
+    .container { display: flex; height: calc(100vh - 52px); }
+    .sidebar {
+      width: 340px; background: #fff; border-right: 1px solid #ddd;
+      display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    .filters {
+      padding: 12px; border-bottom: 1px solid #eee;
+      display: flex; gap: 8px; flex-wrap: wrap;
+    }
+    .filters select, .filters button {
+      padding: 4px 8px; font-size: 13px; border: 1px solid #ccc;
+      border-radius: 4px; background: #fff; cursor: pointer;
+    }
+    .filters button { background: #1a1a2e; color: #fff; border: none; }
+    .filters button:hover { background: #16213e; }
+    .record-list {
+      flex: 1; overflow-y: auto; padding: 0;
+    }
+    .record-item {
+      padding: 10px 12px; border-bottom: 1px solid #eee; cursor: pointer;
+    }
+    .record-item:hover { background: #f0f0f0; }
+    .record-item.active { background: #e8f0fe; border-left: 3px solid #1a73e8; }
+    .record-item .title { font-weight: 500; font-size: 14px; }
+    .record-item .meta {
+      font-size: 12px; color: #666; margin-top: 2px;
+      display: flex; gap: 8px;
+    }
+    .badge {
+      display: inline-block; padding: 1px 6px; border-radius: 3px;
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+    }
+    .badge-issue { background: #fce4e4; color: #c62828; }
+    .badge-spec { background: #e3f2fd; color: #1565c0; }
+    .badge-open { background: #e8f5e9; color: #2e7d32; }
+    .badge-resolved { background: #f3e5f5; color: #6a1b9a; }
+    .badge-archived { background: #eceff1; color: #546e7a; }
+    .main-panel {
+      flex: 1; padding: 24px; overflow-y: auto;
+    }
+    .form-group { margin-bottom: 16px; }
+    .form-group label {
+      display: block; font-size: 13px; font-weight: 600;
+      margin-bottom: 4px; color: #555;
+    }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%; padding: 8px 10px; border: 1px solid #ccc;
+      border-radius: 4px; font-size: 14px; font-family: inherit;
+    }
+    .form-group textarea { min-height: 150px; resize: vertical; }
+    .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+    .btn {
+      padding: 8px 16px; border: none; border-radius: 4px;
+      font-size: 14px; cursor: pointer; font-weight: 500;
+    }
+    .btn-primary { background: #1a73e8; color: #fff; }
+    .btn-primary:hover { background: #1557b0; }
+    .btn-danger { background: #d32f2f; color: #fff; }
+    .btn-danger:hover { background: #b71c1c; }
+    .btn-secondary { background: #e0e0e0; color: #333; }
+    .btn-secondary:hover { background: #ccc; }
+    .search-results {
+      margin-top: 16px;
+    }
+    .search-result {
+      padding: 10px; margin-bottom: 8px; background: #fff;
+      border: 1px solid #ddd; border-radius: 4px;
+    }
+    .search-result .similarity {
+      font-size: 12px; color: #1a73e8; font-weight: 600;
+    }
+    .empty-state {
+      text-align: center; padding: 48px 24px; color: #888;
+    }
+    .empty-state p { margin-top: 8px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Dude</h1>
+    <select id="projectSelect"><option value="">All projects</option></select>
+    <input id="searchInput" type="text" placeholder="Search records..." style="flex:1; max-width: 400px;">
+  </header>
+  <div class="container">
+    <div class="sidebar">
+      <div class="filters">
+        <select id="kindFilter">
+          <option value="">All kinds</option>
+          <option value="issue">Issues</option>
+          <option value="spec">Specs</option>
+        </select>
+        <select id="statusFilter">
+          <option value="">All statuses</option>
+          <option value="open">Open</option>
+          <option value="resolved">Resolved</option>
+          <option value="archived">Archived</option>
+        </select>
+        <button id="newBtn">+ New</button>
+      </div>
+      <div class="record-list" id="recordList"></div>
+    </div>
+    <div class="main-panel" id="mainPanel">
+      <div class="empty-state">
+        <h2>No record selected</h2>
+        <p>Select a record from the sidebar or create a new one.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = '/api';
+    let records = [];
+    let selectedId = null;
+    let searchMode = false;
+    let searchResults = [];
+
+    // --- API helpers ---
+    async function api(path, opts = {}) {
+      const res = await fetch(API + path, {
+        headers: { 'Content-Type': 'application/json' },
+        ...opts,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    // --- Load data ---
+    async function loadProjects() {
+      const projects = await api('/projects');
+      const sel = document.getElementById('projectSelect');
+      sel.innerHTML = '<option value="">All projects</option>';
+      for (const p of projects) {
+        sel.innerHTML += `<option value="${p.name}">${p.name}</option>`;
+      }
+    }
+
+    async function loadRecords() {
+      const params = new URLSearchParams();
+      const project = document.getElementById('projectSelect').value;
+      const kind = document.getElementById('kindFilter').value;
+      const status = document.getElementById('statusFilter').value;
+      if (project) params.set('project', project);
+      else params.set('project', '*');
+      if (kind) params.set('kind', kind);
+      if (status) params.set('status', status);
+      records = await api('/records?' + params);
+      renderList();
+    }
+
+    // --- Render ---
+    function renderList() {
+      const list = document.getElementById('recordList');
+      const items = searchMode ? searchResults : records;
+      if (items.length === 0) {
+        list.innerHTML = '<div class="empty-state"><p>No records found.</p></div>';
+        return;
+      }
+      list.innerHTML = items.map(r => `
+        <div class="record-item ${r.id === selectedId ? 'active' : ''}" data-id="${r.id}">
+          <div class="title">${esc(r.title)}</div>
+          <div class="meta">
+            <span class="badge badge-${r.kind}">${r.kind}</span>
+            <span class="badge badge-${r.status}">${r.status}</span>
+            ${r.project ? `<span>${esc(r.project)}</span>` : ''}
+            ${r.similarity != null ? `<span class="similarity">${(r.similarity * 100).toFixed(0)}%</span>` : ''}
+          </div>
+        </div>
+      `).join('');
+      list.querySelectorAll('.record-item').forEach(el => {
+        el.addEventListener('click', () => selectRecord(Number(el.dataset.id)));
+      });
+    }
+
+    async function selectRecord(id) {
+      selectedId = id;
+      renderList();
+      const record = await api(`/records/${id}`);
+      renderDetail(record);
+    }
+
+    function renderDetail(record) {
+      const panel = document.getElementById('mainPanel');
+      panel.innerHTML = `
+        <div class="form-group">
+          <label>Kind</label>
+          <select id="editKind">
+            <option value="issue" ${record.kind === 'issue' ? 'selected' : ''}>Issue</option>
+            <option value="spec" ${record.kind === 'spec' ? 'selected' : ''}>Spec</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Title</label>
+          <input id="editTitle" value="${esc(record.title)}">
+        </div>
+        <div class="form-group">
+          <label>Body</label>
+          <textarea id="editBody">${esc(record.body)}</textarea>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="editStatus">
+            <option value="open" ${record.status === 'open' ? 'selected' : ''}>Open</option>
+            <option value="resolved" ${record.status === 'resolved' ? 'selected' : ''}>Resolved</option>
+            <option value="archived" ${record.status === 'archived' ? 'selected' : ''}>Archived</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="saveBtn">Save</button>
+          <button class="btn btn-danger" id="deleteBtn">Delete</button>
+        </div>
+      `;
+      document.getElementById('saveBtn').addEventListener('click', () => saveRecord(record.id));
+      document.getElementById('deleteBtn').addEventListener('click', () => delRecord(record.id));
+    }
+
+    function renderNewForm() {
+      selectedId = null;
+      renderList();
+      const panel = document.getElementById('mainPanel');
+      panel.innerHTML = `
+        <h2 style="margin-bottom:16px">New Record</h2>
+        <div class="form-group">
+          <label>Kind</label>
+          <select id="editKind">
+            <option value="issue">Issue</option>
+            <option value="spec">Spec</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Title</label>
+          <input id="editTitle" placeholder="Short summary">
+        </div>
+        <div class="form-group">
+          <label>Body</label>
+          <textarea id="editBody" placeholder="Full description"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="editStatus">
+            <option value="open">Open</option>
+            <option value="resolved">Resolved</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="createBtn">Create</button>
+          <button class="btn btn-secondary" id="cancelBtn">Cancel</button>
+        </div>
+      `;
+      document.getElementById('createBtn').addEventListener('click', createRecord);
+      document.getElementById('cancelBtn').addEventListener('click', () => {
+        document.getElementById('mainPanel').innerHTML = '<div class="empty-state"><h2>No record selected</h2></div>';
+      });
+    }
+
+    // --- CRUD ---
+    async function createRecord() {
+      const data = {
+        kind: document.getElementById('editKind').value,
+        title: document.getElementById('editTitle').value,
+        body: document.getElementById('editBody').value,
+        status: document.getElementById('editStatus').value,
+      };
+      if (!data.title.trim()) return alert('Title is required.');
+      const record = await api('/records', { method: 'POST', body: JSON.stringify(data) });
+      await loadRecords();
+      selectRecord(record.id);
+    }
+
+    async function saveRecord(id) {
+      const data = {
+        kind: document.getElementById('editKind').value,
+        title: document.getElementById('editTitle').value,
+        body: document.getElementById('editBody').value,
+        status: document.getElementById('editStatus').value,
+      };
+      await api(`/records/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+      await loadRecords();
+      selectRecord(id);
+    }
+
+    async function delRecord(id) {
+      if (!confirm('Delete this record?')) return;
+      await api(`/records/${id}`, { method: 'DELETE' });
+      selectedId = null;
+      await loadRecords();
+      document.getElementById('mainPanel').innerHTML = '<div class="empty-state"><h2>Record deleted</h2></div>';
+    }
+
+    // --- Search ---
+    let searchTimeout;
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      const q = e.target.value.trim();
+      if (!q) {
+        searchMode = false;
+        loadRecords();
+        return;
+      }
+      searchTimeout = setTimeout(async () => {
+        searchMode = true;
+        searchResults = await api('/search', { method: 'POST', body: JSON.stringify({ query: q }) });
+        renderList();
+      }, 300);
+    });
+
+    // --- Filters ---
+    document.getElementById('projectSelect').addEventListener('change', loadRecords);
+    document.getElementById('kindFilter').addEventListener('change', loadRecords);
+    document.getElementById('statusFilter').addEventListener('change', loadRecords);
+    document.getElementById('newBtn').addEventListener('click', renderNewForm);
+
+    // --- Util ---
+    function esc(s) {
+      if (!s) return '';
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // --- Init ---
+    loadProjects();
+    loadRecords();
+  </script>
+</body>
+</html>

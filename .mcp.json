@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dude": {
+      "command": "node",
+      "args": ["bin/dude-claude.js", "mcp"]
+    }
+  }
+}
