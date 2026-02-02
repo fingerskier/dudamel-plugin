@@ -1,15 +1,27 @@
 {
   "name": "dude-claude-plugin",
-  "version": "2026.2.3",
+  "version": "2026.2.7",
   "description": "Ultra-minimal RAG and cross-project memory for Claude CLI",
-  "author": { "name": "Fingerskier" },
+  "author": {
+    "name": "Fingerskier"
+  },
   "license": "MIT",
-  "keywords": ["rag", "memory", "project-context", "issues", "specifications"],
+  "keywords": [
+    "rag",
+    "memory",
+    "project-context",
+    "issues",
+    "specifications"
+  ],
   "hooks": "./hooks.json",
   "mcpServers": {
     "dude": {
       "command": "npx",
-      "args": ["-y", "dude-claude-plugin", "mcp"]
+      "args": [
+        "-y",
+        "dude-claude-plugin",
+        "mcp"
+      ]
     }
   }
 }
