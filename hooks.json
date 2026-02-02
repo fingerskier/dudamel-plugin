@@ -5,8 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/auto-retrieve.js",
-            "timeout": 30
+            "command": "npx -y dude-claude-plugin auto-retrieve",
+            "timeout": 60
           }
         ]
       }
@@ -16,8 +16,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/auto-persist.js",
-            "timeout": 30
+            "command": "npx -y dude-claude-plugin auto-persist",
+            "timeout": 60
           }
         ]
       }
