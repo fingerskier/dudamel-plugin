@@ -1,3 +1,4 @@
+import { exec } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -169,6 +170,11 @@ export async function startWebServer() {
     });
   });
   server.listen(port, '127.0.0.1', () => {
-    console.error(`[dude] Web server listening on http://127.0.0.1:${port}`);
+    const url = `http://127.0.0.1:${port}`;
+    console.error(`[dude] Web server listening on ${url}`);
+    const cmd = process.platform === 'darwin' ? 'open'
+              : process.platform === 'win32' ? 'start'
+              : 'xdg-open';
+    exec(`${cmd} ${url}`);
   });
 }
