@@ -32,6 +32,8 @@ function openDb() {
   sqliteVec.load(d);
   d.pragma('journal_mode = WAL');
   d.pragma('foreign_keys = ON');
+  d.pragma('busy_timeout = 5000');
+  console.error(`[dude] Database opened: ${DB_PATH}`);
   return d;
 }
 
@@ -156,9 +158,12 @@ export function listRecords({ kind, status, project } = {}) {
 
 export function deleteRecord(id) {
   const d = getDb();
-  d.prepare('DELETE FROM record_embedding WHERE record_id = ?').run(id);
-  const result = d.prepare('DELETE FROM record WHERE id = ?').run(id);
-  return result.changes > 0;
+  const tx = d.transaction(() => {
+    d.prepare('DELETE FROM record_embedding WHERE record_id = ?').run(id);
+    const result = d.prepare('DELETE FROM record WHERE id = ?').run(id);
+    return result.changes > 0;
+  });
+  return tx();
 }
 
 export function searchRecords(embedding, { kind, projectId, limit = 5 } = {}) {
@@ -213,53 +218,57 @@ export function upsertRecord({ id, projectId, kind, title, body = '', status = '
   const proj = projectId ?? getCurrentProject().id;
   const now = new Date().toISOString();
 
-  if (id) {
-    // Explicit update
-    d.prepare(`
-      UPDATE record SET kind = ?, title = ?, body = ?, status = ?, updated_at = ?
-      WHERE id = ?
-    `).run(kind, title, body, status, now, id);
+  const tx = d.transaction(() => {
+    if (id) {
+      // Explicit update
+      d.prepare(`
+        UPDATE record SET kind = ?, title = ?, body = ?, status = ?, updated_at = ?
+        WHERE id = ?
+      `).run(kind, title, body, status, now, id);
 
-    // vec0 doesn't support UPDATE — delete then insert
-    d.prepare('DELETE FROM record_embedding WHERE record_id = ?').run(id);
-    d.prepare('INSERT INTO record_embedding (record_id, embedding) VALUES (?, ?)').run(BigInt(id), embeddingBuffer(embedding));
+      // vec0 doesn't support UPDATE — delete then insert
+      d.prepare('DELETE FROM record_embedding WHERE record_id = ?').run(id);
+      d.prepare('INSERT INTO record_embedding (record_id, embedding) VALUES (?, ?)').run(BigInt(id), embeddingBuffer(embedding));
 
-    return getRecord(id);
-  }
+      return getRecord(id);
+    }
 
-  // Dedup check: look for close matches in same project+kind
-  const candidates = d.prepare(`
-    SELECT re.record_id, re.distance
-    FROM record_embedding re
-    JOIN record r ON r.id = re.record_id
-    WHERE re.embedding MATCH ? AND k = 5
-      AND r.project_id = ? AND r.kind = ?
-    ORDER BY re.distance
-    LIMIT 1
-  `).all(embeddingBuffer(embedding), proj, kind);
+    // Dedup check: look for close matches in same project+kind
+    const candidates = d.prepare(`
+      SELECT re.record_id, re.distance
+      FROM record_embedding re
+      JOIN record r ON r.id = re.record_id
+      WHERE re.embedding MATCH ? AND k = 5
+        AND r.project_id = ? AND r.kind = ?
+      ORDER BY re.distance
+      LIMIT 1
+    `).all(embeddingBuffer(embedding), proj, kind);
 
-  if (candidates.length > 0 && candidates[0].distance <= 0.15) {
-    // Close match found — update existing record
-    const existingId = candidates[0].record_id;
-    d.prepare(`
-      UPDATE record SET title = ?, body = ?, status = ?, updated_at = ?
-      WHERE id = ?
-    `).run(title, body, status, now, existingId);
+    if (candidates.length > 0 && candidates[0].distance <= 0.15) {
+      // Close match found — update existing record
+      const existingId = candidates[0].record_id;
+      d.prepare(`
+        UPDATE record SET title = ?, body = ?, status = ?, updated_at = ?
+        WHERE id = ?
+      `).run(title, body, status, now, existingId);
 
-    d.prepare('DELETE FROM record_embedding WHERE record_id = ?').run(existingId);
-    d.prepare('INSERT INTO record_embedding (record_id, embedding) VALUES (?, ?)').run(BigInt(existingId), embeddingBuffer(embedding));
+      d.prepare('DELETE FROM record_embedding WHERE record_id = ?').run(existingId);
+      d.prepare('INSERT INTO record_embedding (record_id, embedding) VALUES (?, ?)').run(BigInt(existingId), embeddingBuffer(embedding));
 
-    return getRecord(existingId);
-  }
+      return getRecord(existingId);
+    }
 
-  // Insert new record
-  const result = d.prepare(`
-    INSERT INTO record (project_id, kind, title, body, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(proj, kind, title, body, status, now, now);
+    // Insert new record
+    const result = d.prepare(`
+      INSERT INTO record (project_id, kind, title, body, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(proj, kind, title, body, status, now, now);
 
-  const newId = result.lastInsertRowid;
-  d.prepare('INSERT INTO record_embedding (record_id, embedding) VALUES (?, ?)').run(BigInt(newId), embeddingBuffer(embedding));
+    const newId = result.lastInsertRowid;
+    d.prepare('INSERT INTO record_embedding (record_id, embedding) VALUES (?, ?)').run(BigInt(newId), embeddingBuffer(embedding));
 
-  return getRecord(Number(newId));
+    return getRecord(Number(newId));
+  });
+
+  return tx();
 }

@@ -32,11 +32,16 @@ export async function startServer() {
       limit: z.number().int().positive().optional().describe('Max results (default 5)'),
     },
     async ({ query, kind, project, limit }) => {
-      const embedding = await embed(query);
-      const results = searchRecords(embedding, { kind, limit });
-      return {
-        content: [{ type: 'text', text: JSON.stringify(results, null, 2) }],
-      };
+      try {
+        const embedding = await embed(query);
+        const results = searchRecords(embedding, { kind, limit });
+        return {
+          content: [{ type: 'text', text: JSON.stringify(results, null, 2) }],
+        };
+      } catch (err) {
+        console.error('[dude] search failed:', err);
+        return { content: [{ type: 'text', text: `Error in search: ${err.message}` }], isError: true };
+      }
     },
   );
 
@@ -52,15 +57,20 @@ export async function startServer() {
       status: z.enum(['open', 'resolved', 'archived']).optional().describe('Defaults to open'),
     },
     async ({ id, kind, title, body, status }) => {
-      const text = `${title} ${body || ''}`.trim();
-      const embedding = await embed(text);
-      const record = upsertRecord(
-        { id, projectId: getCurrentProject().id, kind, title, body: body || '', status: status || 'open' },
-        embedding,
-      );
-      return {
-        content: [{ type: 'text', text: JSON.stringify(record, null, 2) }],
-      };
+      try {
+        const text = `${title} ${body || ''}`.trim();
+        const embedding = await embed(text);
+        const record = upsertRecord(
+          { id, projectId: getCurrentProject().id, kind, title, body: body || '', status: status || 'open' },
+          embedding,
+        );
+        return {
+          content: [{ type: 'text', text: JSON.stringify(record, null, 2) }],
+        };
+      } catch (err) {
+        console.error('[dude] upsert_record failed:', err);
+        return { content: [{ type: 'text', text: `Error in upsert_record: ${err.message}` }], isError: true };
+      }
     },
   );
 
@@ -72,13 +82,18 @@ export async function startServer() {
       id: z.number().int().describe('Record ID'),
     },
     async ({ id }) => {
-      const record = getRecord(id);
-      if (!record) {
-        return { content: [{ type: 'text', text: `Record ${id} not found.` }], isError: true };
+      try {
+        const record = getRecord(id);
+        if (!record) {
+          return { content: [{ type: 'text', text: `Record ${id} not found.` }], isError: true };
+        }
+        return {
+          content: [{ type: 'text', text: JSON.stringify(record, null, 2) }],
+        };
+      } catch (err) {
+        console.error('[dude] get_record failed:', err);
+        return { content: [{ type: 'text', text: `Error in get_record: ${err.message}` }], isError: true };
       }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(record, null, 2) }],
-      };
     },
   );
 
@@ -92,10 +107,15 @@ export async function startServer() {
       project: z.string().optional().describe('Project name, or "*" for all'),
     },
     async ({ kind, status, project }) => {
-      const records = listRecords({ kind, status, project });
-      return {
-        content: [{ type: 'text', text: JSON.stringify(records, null, 2) }],
-      };
+      try {
+        const records = listRecords({ kind, status, project });
+        return {
+          content: [{ type: 'text', text: JSON.stringify(records, null, 2) }],
+        };
+      } catch (err) {
+        console.error('[dude] list_records failed:', err);
+        return { content: [{ type: 'text', text: `Error in list_records: ${err.message}` }], isError: true };
+      }
     },
   );
 
@@ -107,10 +127,15 @@ export async function startServer() {
       id: z.number().int().describe('Record ID to delete'),
     },
     async ({ id }) => {
-      const deleted = deleteRecord(id);
-      return {
-        content: [{ type: 'text', text: deleted ? `Record ${id} deleted.` : `Record ${id} not found.` }],
-      };
+      try {
+        const deleted = deleteRecord(id);
+        return {
+          content: [{ type: 'text', text: deleted ? `Record ${id} deleted.` : `Record ${id} not found.` }],
+        };
+      } catch (err) {
+        console.error('[dude] delete_record failed:', err);
+        return { content: [{ type: 'text', text: `Error in delete_record: ${err.message}` }], isError: true };
+      }
     },
   );
 
@@ -120,10 +145,15 @@ export async function startServer() {
     'List all known projects.',
     {},
     async () => {
-      const projects = listProjects();
-      return {
-        content: [{ type: 'text', text: JSON.stringify(projects, null, 2) }],
-      };
+      try {
+        const projects = listProjects();
+        return {
+          content: [{ type: 'text', text: JSON.stringify(projects, null, 2) }],
+        };
+      } catch (err) {
+        console.error('[dude] list_projects failed:', err);
+        return { content: [{ type: 'text', text: `Error in list_projects: ${err.message}` }], isError: true };
+      }
     },
   );
 
