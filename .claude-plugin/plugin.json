@@ -1,6 +1,6 @@
 {
   "name": "dude-claude-plugin",
-  "version": "2026.2.8",
+  "version": "2026.2.9",
   "description": "Ultra-minimal RAG and cross-project memory for Claude CLI",
   "author": {
     "name": "Fingerskier"
@@ -14,14 +14,5 @@
     "specifications"
   ],
   "hooks": "./hooks.json",
-  "mcpServers": {
-    "dude": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "dude-claude-plugin",
-        "mcp"
-      ]
-    }
-  }
+  "mcpServers": "./mcp-servers.json"
 }

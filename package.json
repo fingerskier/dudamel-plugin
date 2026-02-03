@@ -40,7 +40,8 @@
     "web/",
     ".claude-plugin/",
     ".mcp.json",
-    "hooks.json"
+    "hooks.json",
+    "mcp-servers.json"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",

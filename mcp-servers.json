@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dude": {
+      "command": "npx",
+      "args": ["-y", "dude-claude-plugin", "mcp"]
+    }
+  }
+}
