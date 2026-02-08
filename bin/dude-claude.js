@@ -32,7 +32,7 @@ Commands:
   mcp               Start the MCP stdio server (default)
   serve             Start the web UI server on http://127.0.0.1:${process.env.DUDE_PORT || 3456}
   auto-retrieve     Run the auto-retrieve hook (reads prompt from stdin)
-  auto-persist      Run the auto-persist hook (reads classification from stdin)
-  auto-persist-plan Run the auto-persist-plan hook for plan events`);
+  auto-persist      Run the auto-persist utility (reads classification JSON from stdin)
+  auto-persist-plan Run the auto-persist-plan utility (reads classification JSON from stdin)`);
     process.exit(1);
 }

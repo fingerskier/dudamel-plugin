@@ -16,14 +16,9 @@
         "matcher": "Plan",
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "A plan has been created. Review it and output JSON to save it as a project spec: {\"action\":\"upsert\",\"kind\":\"spec\",\"title\":\"<plan title>\",\"body\":\"<full plan details including steps>\",\"status\":\"open\"}. Output ONLY the JSON, no other text.",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "npx -y dude-claude-plugin auto-persist-plan",
-            "timeout": 60
+            "type": "agent",
+            "prompt": "Event data: $ARGUMENTS\n\nA Plan subagent has finished. Read the plan transcript at the \"agent_transcript_path\" path from the event data. Read the last 200 lines to understand the plan.\n\nBLOCK the stop (ok: false) with reason:\n\"Please use the dude:upsert_record tool to save this plan as a specification: kind=spec, title=<plan title>, body=<plan details and steps>, status=open\"\n\nIf you cannot read the transcript or extract a meaningful plan, ALLOW the stop (ok: true).",
+            "timeout": 120
           }
         ]
       }
@@ -32,14 +27,9 @@
       {
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "Review the conversation. Classify the work and output ONE JSON object. Bug fix: {\"action\":\"upsert\",\"kind\":\"issue\",\"title\":\"...\",\"body\":\"...\",\"status\":\"resolved\"}. Architectural change (new patterns, structural reorganization, API design): {\"action\":\"upsert\",\"kind\":\"arch\",\"title\":\"...\",\"body\":\"<describe the architectural decision and rationale>\",\"status\":\"resolved\"}. Feature update or improvement to existing functionality: {\"action\":\"upsert\",\"kind\":\"update\",\"title\":\"...\",\"body\":\"<summary of what was changed>\",\"status\":\"resolved\"}. New specification or plan (not yet implemented): {\"action\":\"upsert\",\"kind\":\"spec\",\"title\":\"...\",\"body\":\"<plan details>\",\"status\":\"open\"}. Completing a planned spec: {\"action\":\"upsert\",\"kind\":\"spec\",\"title\":\"...\",\"body\":\"<summary of what was implemented>\",\"status\":\"resolved\"}. If none apply, output {\"action\":\"none\"}. Output ONLY the JSON, no other text.",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "npx -y dude-claude-plugin auto-persist",
-            "timeout": 60
+            "type": "agent",
+            "prompt": "Event data: $ARGUMENTS\n\nCheck the \"stop_hook_active\" field. If it is true, return decision: ALLOW (ok: true). Do not read any files.\n\nOtherwise, read the transcript file at the \"transcript_path\" path from the event data. Read the last 200 lines to understand what work was done.\n\nClassify the work into exactly one category:\n- Bug fix → kind=issue, status=resolved\n- Architectural change (new patterns, restructuring, API design) → kind=arch, status=resolved\n- Feature update or improvement → kind=update, status=resolved\n- New specification or plan (not yet implemented) → kind=spec, status=open\n- Completing a planned spec → kind=spec, status=resolved\n- Trivial Q&A, chat, or unclassifiable → no action needed\n\nIf you classified the work, BLOCK the stop (ok: false) with reason:\n\"Please use the dude:upsert_record tool to save this work record: kind=<kind>, title=<concise title>, body=<brief summary of what was done>, status=<status>\"\n\nIf no classification is needed (trivial/unclassifiable), ALLOW the stop (ok: true).",
+            "timeout": 120
           }
         ]
       }

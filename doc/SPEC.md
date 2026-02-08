@@ -14,8 +14,9 @@ Claude CLI
   ├── MCP stdio server  (tools: search, CRUD)
   │     └── SQLite + vec0 extension
   └── Hooks
-        ├── PreToolUse   → auto-retrieve relevant records
-        └── Stop         → auto-upsert issue/spec records
+        ├── UserPromptSubmit  → auto-retrieve relevant records (command hook)
+        ├── Stop              → classify & persist via agent hook → MCP upsert
+        └── SubagentStop      → persist plan specs via agent hook → MCP upsert
 ```
 
 ## 2. Technology Stack
@@ -205,7 +206,7 @@ The hook script:
 
 ### 5.2 Auto-Persist (Stop)
 
-When Claude finishes responding, a `Stop` hook evaluates whether the conversation involved a fix or improvement and upserts records accordingly.
+When Claude finishes responding, a `Stop` hook uses an **agent** to read the session transcript, classify the work, and instruct Claude to persist the record via MCP tools.
 
 **Settings entry:**
 ```json
@@ -215,9 +216,9 @@ When Claude finishes responding, a `Stop` hook evaluates whether the conversatio
       {
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "Review the conversation. Bug fix: kind=issue. Architectural change: kind=arch. Feature update/improvement: kind=update. New plan/spec: kind=spec. Output JSON: {\"action\":\"upsert\",\"kind\":\"...\",\"title\":\"...\",\"body\":\"...\",\"status\":\"resolved\"}. If none apply: {\"action\":\"none\"}.",
-            "timeout": 30
+            "type": "agent",
+            "prompt": "Event data: $ARGUMENTS\n\nCheck \"stop_hook_active\". If true, ALLOW (ok: true). Otherwise read the transcript at \"transcript_path\". Classify: bug fix=issue, architecture=arch, feature=update, plan=spec. BLOCK (ok: false) with reason instructing Claude to use dude:upsert_record. If trivial/unclassifiable, ALLOW (ok: true).",
+            "timeout": 120
           }
         ]
       }
@@ -226,22 +227,33 @@ When Claude finishes responding, a `Stop` hook evaluates whether the conversatio
 }
 ```
 
-A follow-up command hook parses this output and calls `mcp__dude__upsert_record`.
+**How it works:**
+1. The agent hook spawns a Claude subagent that reads the transcript file.
+2. If the work is classifiable, the agent returns `ok: false` with a reason instructing Claude to use `dude:upsert_record` to persist the classification.
+3. Claude continues, sees the instruction, and calls the MCP tool to save the record.
+4. On the second Stop, `stop_hook_active` is `true` — the agent returns `ok: true` and the session ends.
+5. If the work is trivial/unclassifiable, the agent returns `ok: true` immediately (no extra turn).
 
-**Fallback behavior**: If the model returns malformed JSON or declines to classify, the hook silently skips the upsert (no data loss, no user-facing error) **and** emits a tool-result message to Claude's worklog noting that the auto-persist step was skipped and why (e.g., "Auto-persist skipped: malformed JSON from classification prompt").
+**Loop prevention:** The `stop_hook_active` field in the event JSON is `true` when the Stop hook was triggered by a hook continuation. The agent checks this first and allows the stop immediately, preventing infinite loops.
 
-### 5.3 Classification Logic
+### 5.3 Auto-Persist Plan (SubagentStop)
 
-The work classification (issue, spec, arch, or update) is determined by the Stop hook's LLM prompt evaluation — not by heuristics.
-The prompt asks Claude to classify the work into one of four kinds:
+When a Plan subagent finishes, a `SubagentStop` hook (with `"matcher": "Plan"`) reads the plan transcript and instructs Claude to persist it as a spec record.
+
+The flow is the same as the Stop hook: the agent reads the plan transcript, returns `ok: false` with a reason to persist, and Claude calls `dude:upsert_record`.
+
+### 5.4 Classification Logic
+
+The work classification (issue, spec, arch, or update) is determined by the agent hook's Claude subagent reading the actual session transcript — not by heuristics.
+The agent classifies the work into one of four kinds:
 - **issue**: a bug was fixed
 - **spec**: a plan or specification was created (or completed)
 - **arch**: an architectural decision, new pattern, or structural reorganization
 - **update**: a feature was added or improved
 
-This keeps the logic simple and leverages the model's understanding of the conversation.
+This leverages Claude's understanding of the conversation for accurate classification.
 
-The same fallback applies here: if classification fails, the hook skips silently and logs a worklog message.
+**Fallback behavior**: If the agent cannot read the transcript or determine a classification, it returns `ok: true` and the session ends normally without persisting a record.
 
 ## 6. Web UI
 

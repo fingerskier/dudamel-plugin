@@ -185,6 +185,18 @@ export function listRecords({ kind, status, project } = {}) {
   return d.prepare(sql).all(...params);
 }
 
+export function getRecentRecords(projectId, hours = 1) {
+  const d = getDb();
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  return d.prepare(`
+    SELECT r.id, r.kind, r.title, r.status, r.updated_at, p.name AS project
+    FROM record r JOIN project p ON r.project_id = p.id
+    WHERE r.project_id = ? AND r.updated_at > ?
+    ORDER BY r.updated_at DESC
+    LIMIT 10
+  `).all(projectId, cutoff);
+}
+
 export function deleteRecord(id) {
   const d = getDb();
   const tx = d.transaction(() => {

@@ -45,7 +45,8 @@
     ".claude-plugin/",
     ".mcp.json",
     "hooks.json",
-    "mcp-servers.json"
+    "mcp-servers.json",
+    "skills/"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",

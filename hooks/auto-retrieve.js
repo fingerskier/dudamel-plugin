@@ -7,7 +7,7 @@
  */
 
 import { embed } from '../src/embed.js';
-import { initDb, searchRecords } from '../src/db.js';
+import { initDb, searchRecords, getCurrentProject, getRecentRecords } from '../src/db.js';
 
 try {
   const chunks = [];
