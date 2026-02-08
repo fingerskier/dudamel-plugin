@@ -22,23 +22,37 @@ try {
   }
 
   await initDb();
+  const project = getCurrentProject();
+
+  // 1) Project identification
+  process.stdout.write(`[dude] Project: ${project.name} (id=${project.id})\n`);
+
+  // 2) Recently updated records
+  const recencyWindow = Number(process.env.DUDE_RECENCY_HOURS) || 1;
+  const recentRecords = getRecentRecords(project.id, recencyWindow);
+  if (recentRecords.length > 0) {
+    const recentLines = ['[dude] Recently updated records:'];
+    for (const r of recentRecords) {
+      recentLines.push(`- [${r.kind}] ${r.title} (id=${r.id}, status=${r.status}, updated: ${r.updated_at})`);
+    }
+    process.stdout.write(recentLines.join('\n') + '\n');
+  }
+
+  // 3) Semantic search
   const embedding = await embed(prompt);
   const limit = Number(process.env.DUDE_CONTEXT_LIMIT) || 5;
   const results = searchRecords(embedding, { limit });
 
-  if (results.length === 0) {
-    process.exit(0);
-  }
-
-  // Format context for Claude
-  const lines = ['[dude] Relevant context from memory:\n'];
-  for (const r of results) {
-    lines.push(`- [${r.kind}] ${r.title} (project: ${r.project}, status: ${r.status}, similarity: ${r.similarity.toFixed(2)})`);
-    if (r.body) {
-      lines.push(`  ${r.body.slice(0, 200)}${r.body.length > 200 ? '…' : ''}`);
+  if (results.length > 0) {
+    const lines = ['[dude] Relevant context from memory:'];
+    for (const r of results) {
+      lines.push(`- [${r.kind}] ${r.title} (project: ${r.project}, status: ${r.status}, similarity: ${r.similarity.toFixed(2)})`);
+      if (r.body) {
+        lines.push(`  ${r.body.slice(0, 200)}${r.body.length > 200 ? '…' : ''}`);
+      }
     }
+    process.stdout.write(lines.join('\n') + '\n');
   }
-  process.stdout.write(lines.join('\n') + '\n');
 } catch (err) {
   // Non-blocking: exit cleanly on any error
   console.error(`[dude] auto-retrieve error: ${err.message}`);

@@ -64,8 +64,10 @@ export async function startServer() {
           { id, projectId: getCurrentProject().id, kind, title, body: body || '', status: status || 'open' },
           embedding,
         );
+        const action = id ? 'Updated' : 'Saved';
+        const summary = `[dude] ${action} ${record.kind}: "${record.title}" (id=${record.id}, status=${record.status})`;
         return {
-          content: [{ type: 'text', text: JSON.stringify(record, null, 2) }],
+          content: [{ type: 'text', text: `${summary}\n\n${JSON.stringify(record, null, 2)}` }],
         };
       } catch (err) {
         console.error('[dude] upsert_record failed:', err);
