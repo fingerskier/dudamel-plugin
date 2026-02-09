@@ -42,6 +42,7 @@
     "bin/",
     "src/",
     "hooks/",
+    "scripts/",
     "web/",
     ".claude-plugin/",
     ".mcp.json",
@@ -51,6 +52,7 @@
   ],
   "dependencies": {
     "@huggingface/transformers": "^3.4.1",
+    "@libsql/client": "^0.14.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "better-sqlite3": "^11.8.1",
     "sqlite-vec": "^0.1.6",

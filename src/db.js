@@ -1,15 +1,38 @@
-import { SqliteVecAdapter } from './db-sqlite-vec.js';
+import { existsSync } from 'node:fs';
+import { rename, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { LibsqlAdapter } from './db-libsql.js';
+
+const DATA_DIR = join(homedir(), '.dude-claude');
+const OLD_DB   = join(DATA_DIR, 'dude.db');
+const NEW_DB   = join(DATA_DIR, 'dude-libsql.db');
 
 let adapter = null;
 
 /**
  * Initialise the database and return a DbAdapter instance.
+ * Detects the DB state on disk:
+ *   1. Fresh install (no DB exists)          → LibsqlAdapter directly
+ *   2. Already migrated (new DB exists)      → LibsqlAdapter
+ *   3. Old DB exists, not migrated           → auto-migrate, rename old to .backup
+ *
  * Subsequent calls return the same instance.
+ * @param {object} [config] - Optional config passed to LibsqlAdapter
  * @returns {Promise<import('./db-adapter.js').DbAdapter>}
  */
-export async function initDb() {
+export async function initDb(config = {}) {
   if (adapter) return adapter;
-  adapter = new SqliteVecAdapter();
+
+  const hasOldDb = existsSync(OLD_DB);
+  const hasNewDb = existsSync(NEW_DB);
+
+  // Old DB exists, not yet migrated → auto-migrate
+  if (hasOldDb && !hasNewDb) {
+    await _autoMigrate();
+  }
+
+  adapter = new LibsqlAdapter({ dbPath: NEW_DB, ...config });
   await adapter.init();
   return adapter;
 }
@@ -19,174 +42,55 @@ export function getDb() {
   return adapter;
 }
 
-/** @returns {{ id: number, name: string }} */
-export function getCurrentProject() {
-  return adapter.currentProject
-    ? { id: adapter.currentProject.id, name: adapter.currentProject.name }
-    : null;
+/** @internal Reset singleton for testing — not for production use. */
+export function _resetForTesting() {
+  adapter = null;
 }
 
-export function listProjects() {
-  return adapter.db.prepare('SELECT id, name, created_at, updated_at FROM project ORDER BY name').all();
-}
+/**
+ * Run the one-time auto-migration from old better-sqlite3 DB to libsql.
+ * @private
+ */
+async function _autoMigrate() {
+  console.error('[dude] Old database detected. Migrating to libsql format...');
 
-export function getRecord(id) {
-  const row = adapter.db.prepare(`
-    SELECT r.*, p.name AS project
-    FROM record r JOIN project p ON r.project_id = p.id
-    WHERE r.id = ?
-  `).get(id);
-  return row ?? null;
-}
-
-export function listRecords({ kind, status, project } = {}) {
-  let projectId;
-  if (!project || project === 'current') {
-    projectId = adapter.currentProject?.id;
-  } else if (project !== '*') {
-    const p = adapter.db.prepare('SELECT id FROM project WHERE name = ?').get(project);
-    projectId = p?.id;
+  let migrate;
+  try {
+    const mod = await import('../scripts/migrate-to-libsql.js');
+    migrate = mod.migrate;
+  } catch (err) {
+    throw new Error(
+      'Database migration requires better-sqlite3 and sqlite-vec packages.\n' +
+      '       Install them with: npm install better-sqlite3 sqlite-vec\n' +
+      '       Then restart. Your old data in dude.db will be migrated.\n' +
+      `       Error: ${err.message}`
+    );
   }
 
-  let sql = `
-    SELECT r.id, r.kind, r.title, r.status, r.updated_at, p.name AS project
-    FROM record r JOIN project p ON r.project_id = p.id
-    WHERE 1=1
-  `;
-  const params = [];
-
-  if (projectId) {
-    sql += ' AND r.project_id = ?';
-    params.push(projectId);
-  }
-  if (kind && kind !== 'all') {
-    sql += ' AND r.kind = ?';
-    params.push(kind);
-  }
-  if (status && status !== 'all') {
-    sql += ' AND r.status = ?';
-    params.push(status);
-  }
-  sql += ' ORDER BY r.updated_at DESC';
-
-  return adapter.db.prepare(sql).all(...params);
-}
-
-export function deleteRecord(id) {
-  const tx = adapter.db.transaction(() => {
-    adapter.db.prepare('DELETE FROM record_embedding WHERE record_id = ?').run(id);
-    const result = adapter.db.prepare('DELETE FROM record WHERE id = ?').run(id);
-    return result.changes > 0;
-  });
-  return tx();
-}
-
-function embeddingBuffer(emb) {
-  return Buffer.from(emb.buffer, emb.byteOffset, emb.byteLength);
-}
-
-export function searchRecords(embedding, { kind, limit = 5 } = {}) {
-  const curProject = adapter.currentProject;
-
-  let sql = `
-    SELECT
-      re.record_id, re.distance,
-      r.id, r.kind, r.title, r.body, r.status,
-      r.created_at, r.updated_at,
-      p.name AS project
-    FROM record_embedding re
-    JOIN record r ON r.id = re.record_id
-    JOIN project p ON r.project_id = p.id
-    WHERE re.embedding MATCH ? AND k = ?
-  `;
-  const params = [embeddingBuffer(new Float32Array(embedding)), limit * 3];
-
-  if (kind && kind !== 'all') {
-    sql += ' AND r.kind = ?';
-    params.push(kind);
-  }
-  sql += ' ORDER BY re.distance';
-
-  let rows = adapter.db.prepare(sql).all(...params);
-
-  rows = rows.map(row => {
-    let similarity = 1 - row.distance;
-    if (curProject && row.project === curProject.name) {
-      similarity = Math.min(1.0, similarity + 0.1);
+  try {
+    const stats = await migrate(OLD_DB, `file:${NEW_DB}`);
+    console.error(
+      `[dude] Migration complete: ${stats.projects} projects, ` +
+      `${stats.records} records, ${stats.embeddings} embeddings.`
+    );
+  } catch (err) {
+    // Clean up partial migration so next startup can retry
+    if (existsSync(NEW_DB)) {
+      try { await unlink(NEW_DB); } catch { /* ignore cleanup errors */ }
     }
-    return { ...row, similarity };
-  });
+    throw new Error(
+      `Database migration failed. Old database preserved at ${OLD_DB}. Error: ${err.message}`
+    );
+  }
 
-  return rows
-    .filter(r => r.similarity >= 0.3)
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, limit)
-    .map(({ record_id, distance, ...rest }) => rest);
-}
-
-export function upsertRecord({ id, projectId, kind, title, body = '', status = 'open' }, embedding) {
-  const proj = projectId ?? adapter.currentProject?.id;
-  const now = new Date().toISOString();
-
-  const tx = adapter.db.transaction(() => {
-    if (id) {
-      adapter.db.prepare(`
-        UPDATE record SET kind = ?, title = ?, body = ?, status = ?, updated_at = ?
-        WHERE id = ?
-      `).run(kind, title, body, status, now, id);
-
-      adapter.db.prepare('DELETE FROM record_embedding WHERE record_id = ?').run(id);
-      adapter.db.prepare('INSERT INTO record_embedding (record_id, embedding) VALUES (?, ?)').run(BigInt(id), embeddingBuffer(embedding));
-
-      return getRecord(id);
-    }
-
-    // Dedup check
-    const candidates = adapter.db.prepare(`
-      SELECT re.record_id, re.distance
-      FROM record_embedding re
-      JOIN record r ON r.id = re.record_id
-      WHERE re.embedding MATCH ? AND k = 5
-        AND r.project_id = ? AND r.kind = ?
-      ORDER BY re.distance
-      LIMIT 1
-    `).all(embeddingBuffer(embedding), proj, kind);
-
-    if (candidates.length > 0 && candidates[0].distance <= 0.15) {
-      const existingId = candidates[0].record_id;
-      adapter.db.prepare(`
-        UPDATE record SET title = ?, body = ?, status = ?, updated_at = ?
-        WHERE id = ?
-      `).run(title, body, status, now, existingId);
-
-      adapter.db.prepare('DELETE FROM record_embedding WHERE record_id = ?').run(existingId);
-      adapter.db.prepare('INSERT INTO record_embedding (record_id, embedding) VALUES (?, ?)').run(BigInt(existingId), embeddingBuffer(embedding));
-
-      return getRecord(existingId);
-    }
-
-    // Insert new record
-    const result = adapter.db.prepare(`
-      INSERT INTO record (project_id, kind, title, body, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(proj, kind, title, body, status, now, now);
-
-    const newId = result.lastInsertRowid;
-    adapter.db.prepare('INSERT INTO record_embedding (record_id, embedding) VALUES (?, ?)').run(BigInt(newId), embeddingBuffer(embedding));
-
-    return getRecord(Number(newId));
-  });
-
-  return tx();
-}
-
-export function getRecentRecords(projectId, hours = 1) {
-  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-  return adapter.db.prepare(`
-    SELECT r.id, r.kind, r.title, r.status, r.updated_at, p.name AS project
-    FROM record r JOIN project p ON r.project_id = p.id
-    WHERE r.project_id = ? AND r.updated_at > ?
-    ORDER BY r.updated_at DESC
-    LIMIT 10
-  `).all(projectId, cutoff);
+  // Rename old DB to .backup
+  try {
+    await rename(OLD_DB, `${OLD_DB}.backup`);
+    console.error(`[dude] Old database backed up to ${OLD_DB}.backup`);
+  } catch (err) {
+    console.error(
+      `[dude] Warning: Could not rename old database to .backup: ${err.message}\n` +
+      '       The migration succeeded. You can manually delete dude.db.'
+    );
+  }
 }

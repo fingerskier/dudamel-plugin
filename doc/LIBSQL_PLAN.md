@@ -81,6 +81,7 @@ The libsql approach is simpler — vectors live in the regular `record` table as
 
 Each phase is a standalone version bump. New users can start at any version.
 
+
 ### Phase 1: Abstract the DB Layer (non-breaking)
 
 **Goal:** Decouple all callers from `better-sqlite3` specifics so backends can be swapped without changing tool handlers, hooks, or the web server.
@@ -120,6 +121,7 @@ Wrap the existing `better-sqlite3` + `sqlite-vec` code in `src/db-sqlite-vec.js`
 **Key detail:** The hook scripts (`hooks/*.js`) currently import from `src/db.js` directly and use sync APIs. They must become async even for the sqlite-vec backend — this is the main code change in Phase 1.
 
 **Risk:** Low — pure refactor, same behavior.
+
 
 ### Phase 2: Implement the libsql Backend
 
@@ -322,6 +324,7 @@ export async function initDb(config) {
 
 **Risk:** Medium — must handle edge cases (locked DB, partial migration, disk space).
 
+
 ### Phase 5: Cloud Sync (opt-in)
 
 **Goal:** Optional Turso cloud sync via environment variables.
@@ -367,9 +370,9 @@ During Phase 1–3 (both backends coexist), all four packages are present. After
 | Phase | Version Bump | User Impact | Risk | Status |
 |-------|-------------|------------|------|--------|
 | 1. Abstract DB layer | patch | Zero — refactor only | Low | **DONE** |
-| 2. Implement libsql backend | minor | Zero — not yet active | Low | TODO |
-| 3. Migration script | (bundled with 4) | Zero — not yet wired up | Medium | TODO |
-| 4. Auto-migration on upgrade | **major** | One-time pause on first run; old DB kept as `.backup` | Medium | TODO |
+| 2. Implement libsql backend | minor | Zero — not yet active | Low | **DONE** |
+| 3. Migration script | (bundled with 4) | Zero — not yet wired up | Medium | **DONE** |
+| 4. Auto-migration on upgrade | **major** | One-time pause on first run; old DB kept as `.backup` | Medium | **DONE** |
 | 5. Cloud sync opt-in | minor | Zero — only activates with env vars | Low | TODO |
 
 ---

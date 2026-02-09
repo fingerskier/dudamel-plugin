@@ -468,114 +468,89 @@ describe('db.js', () => {
 });
 
 // -----------------------------------------------------------------------
-// Integration test: initDb via the actual module (mocked deps)
+// Integration test: initDb factory (mocked deps)
 // -----------------------------------------------------------------------
 
-describe('db.js module integration', () => {
-  it('should export expected functions', async () => {
+describe('db.js factory (initDb)', () => {
+  it('should export initDb, getDb, and _resetForTesting', async () => {
     const dbModule = await import('../src/db.js');
     expect(typeof dbModule.initDb).toBe('function');
     expect(typeof dbModule.getDb).toBe('function');
-    expect(typeof dbModule.getCurrentProject).toBe('function');
-    expect(typeof dbModule.listProjects).toBe('function');
-    expect(typeof dbModule.getRecord).toBe('function');
-    expect(typeof dbModule.listRecords).toBe('function');
-    expect(typeof dbModule.deleteRecord).toBe('function');
-    expect(typeof dbModule.searchRecords).toBe('function');
-    expect(typeof dbModule.upsertRecord).toBe('function');
-    expect(typeof dbModule.getRecentRecords).toBe('function');
+    expect(typeof dbModule._resetForTesting).toBe('function');
   });
 
-  it('should initialize DB and detect project', async () => {
+  it('should not export legacy sync functions', async () => {
     const dbModule = await import('../src/db.js');
-    const d = await dbModule.initDb();
-    expect(d).toBeDefined();
+    expect(dbModule.getCurrentProject).toBeUndefined();
+    expect(dbModule.listProjects).toBeUndefined();
+    expect(dbModule.getRecord).toBeUndefined();
+    expect(dbModule.listRecords).toBeUndefined();
+    expect(dbModule.deleteRecord).toBeUndefined();
+    expect(dbModule.searchRecords).toBeUndefined();
+    expect(dbModule.upsertRecord).toBeUndefined();
+    expect(dbModule.getRecentRecords).toBeUndefined();
+  });
 
-    const proj = dbModule.getCurrentProject();
+  it('should initialize and return a working adapter', async () => {
+    const dbModule = await import('../src/db.js');
+    dbModule._resetForTesting();
+
+    const db = await dbModule.initDb({ url: 'file::memory:' });
+    expect(db).toBeDefined();
+
+    const proj = await db.getCurrentProject();
     expect(proj.name).toBe('testorg/test-project');
     expect(proj.id).toBeGreaterThan(0);
   });
 
-  it('should perform full CRUD cycle through module exports', async () => {
+  it('should return the same adapter on subsequent calls (singleton)', async () => {
     const dbModule = await import('../src/db.js');
-    await dbModule.initDb();
+    dbModule._resetForTesting();
 
-    const proj = dbModule.getCurrentProject();
+    const db1 = await dbModule.initDb({ url: 'file::memory:' });
+    const db2 = await dbModule.initDb();
+    expect(db1).toBe(db2);
+  });
+
+  it('should return adapter via getDb after init', async () => {
+    const dbModule = await import('../src/db.js');
+    dbModule._resetForTesting();
+
+    await dbModule.initDb({ url: 'file::memory:' });
+    const db = dbModule.getDb();
+    expect(db).toBeDefined();
+
+    const proj = await db.getCurrentProject();
+    expect(proj.name).toBe('testorg/test-project');
+  });
+
+  it('should perform CRUD through the adapter returned by initDb', async () => {
+    const dbModule = await import('../src/db.js');
+    dbModule._resetForTesting();
+
+    const db = await dbModule.initDb({ url: 'file::memory:' });
     const emb = fakeEmbedding();
 
     // Create
-    const created = dbModule.upsertRecord(
-      { projectId: proj.id, kind: 'issue', title: 'Module Test', body: 'Testing via module', status: 'open' },
+    const created = await db.upsert(
+      { kind: 'issue', title: 'Factory Test', body: 'Testing via factory' },
       emb,
     );
-    expect(created).toBeDefined();
-    expect(created.title).toBe('Module Test');
+    expect(created.title).toBe('Factory Test');
 
     // Read
-    const fetched = dbModule.getRecord(created.id);
-    expect(fetched.title).toBe('Module Test');
-
-    // Update
-    const newEmb = fakeEmbedding();
-    const updated = dbModule.upsertRecord(
-      { id: created.id, projectId: proj.id, kind: 'issue', title: 'Updated Title', body: 'Updated body', status: 'resolved' },
-      newEmb,
-    );
-    expect(updated.title).toBe('Updated Title');
-    expect(updated.status).toBe('resolved');
+    const fetched = await db.get(created.id);
+    expect(fetched.title).toBe('Factory Test');
 
     // List
-    const records = dbModule.listRecords({ kind: 'issue' });
+    const records = await db.list({ kind: 'issue' });
     expect(records.length).toBeGreaterThanOrEqual(1);
 
     // Delete
-    const deleted = dbModule.deleteRecord(created.id);
+    const deleted = await db.delete(created.id);
     expect(deleted).toBe(true);
 
-    const gone = dbModule.getRecord(created.id);
+    const gone = await db.get(created.id);
     expect(gone).toBeNull();
-  });
-
-  it('should search records through module exports', async () => {
-    const dbModule = await import('../src/db.js');
-    await dbModule.initDb();
-
-    const proj = dbModule.getCurrentProject();
-    const emb = seededEmbedding(777);
-
-    dbModule.upsertRecord(
-      { projectId: proj.id, kind: 'issue', title: 'Searchable Bug', body: 'This is searchable', status: 'open' },
-      emb,
-    );
-
-    const results = dbModule.searchRecords(emb, { limit: 5 });
-    expect(results.length).toBeGreaterThanOrEqual(1);
-    expect(results[0].title).toBe('Searchable Bug');
-    expect(results[0].similarity).toBeGreaterThan(0.3);
-  });
-
-  it('should list projects through module exports', async () => {
-    const dbModule = await import('../src/db.js');
-    await dbModule.initDb();
-
-    const projects = dbModule.listProjects();
-    expect(projects.length).toBeGreaterThanOrEqual(1);
-    expect(projects.some(p => p.name === 'testorg/test-project')).toBe(true);
-  });
-
-  it('should get recent records through module exports', async () => {
-    const dbModule = await import('../src/db.js');
-    await dbModule.initDb();
-
-    const proj = dbModule.getCurrentProject();
-    const emb = fakeEmbedding();
-
-    dbModule.upsertRecord(
-      { projectId: proj.id, kind: 'spec', title: 'Recent Spec', body: 'New spec', status: 'open' },
-      emb,
-    );
-
-    const recent = dbModule.getRecentRecords(proj.id, 1);
-    expect(recent.length).toBeGreaterThanOrEqual(1);
   });
 });
