@@ -7,7 +7,7 @@
  */
 
 import { embed } from '../src/embed.js';
-import { initDb, upsertRecord, getCurrentProject } from '../src/db.js';
+import { initDb } from '../src/db.js';
 
 try {
   const chunks = [];
@@ -34,13 +34,14 @@ try {
     const body = input.body || '';
     const status = input.status || 'open';
 
-    await initDb();
+    const db = await initDb();
     const text = `${title} ${body}`.trim();
     const embedding = await embed(text);
 
-    const record = upsertRecord(
+    const project = await db.getCurrentProject();
+    const record = await db.upsert(
       {
-        projectId: getCurrentProject().id,
+        projectId: project.id,
         kind,
         title,
         body,

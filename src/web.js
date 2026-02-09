@@ -4,16 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { embed } from './embed.js';
-import {
-  initDb,
-  getCurrentProject,
-  searchRecords,
-  upsertRecord,
-  getRecord,
-  listRecords,
-  listProjects,
-  deleteRecord,
-} from './db.js';
+import { initDb } from './db.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const INDEX_HTML = readFileSync(join(__dirname, '..', 'web', 'index.html'), 'utf8');
@@ -46,7 +37,7 @@ async function parseJsonBody(req, res) {
   }
 }
 
-async function handleRequest(req, res) {
+async function handleRequest(db, req, res) {
   const { method } = req;
   const url = new URL(req.url, `http://${req.headers.host}`);
   const path = url.pathname;
@@ -72,7 +63,7 @@ async function handleRequest(req, res) {
 
   // GET /api/projects
   if (method === 'GET' && path === '/api/projects') {
-    return json(res, listProjects());
+    return json(res, await db.listProjects());
   }
 
   // POST /api/search
@@ -80,7 +71,7 @@ async function handleRequest(req, res) {
     const body = await parseJsonBody(req, res);
     if (!body) return;
     const embedding = await embed(body.query || '');
-    const results = searchRecords(embedding, {
+    const results = await db.search(embedding, {
       kind: body.kind,
       limit: body.limit,
     });
@@ -98,12 +89,12 @@ async function handleRequest(req, res) {
       const kind = url.searchParams.get('kind') || undefined;
       const status = url.searchParams.get('status') || undefined;
       const project = url.searchParams.get('project') || undefined;
-      return json(res, listRecords({ kind, status, project }));
+      return json(res, await db.list({ kind, status, project }));
     }
 
     // GET /api/records/:id
     if (method === 'GET' && id) {
-      const record = getRecord(id);
+      const record = await db.get(id);
       if (!record) return notFound(res);
       return json(res, record);
     }
@@ -114,9 +105,10 @@ async function handleRequest(req, res) {
       if (!body) return;
       const text = `${body.title || ''} ${body.body || ''}`.trim();
       const embedding = await embed(text);
-      const record = upsertRecord(
+      const project = await db.getCurrentProject();
+      const record = await db.upsert(
         {
-          projectId: getCurrentProject().id,
+          projectId: project.id,
           kind: body.kind || 'issue',
           title: body.title || '',
           body: body.body || '',
@@ -129,13 +121,13 @@ async function handleRequest(req, res) {
 
     // PUT /api/records/:id
     if (method === 'PUT' && id) {
-      const existing = getRecord(id);
+      const existing = await db.get(id);
       if (!existing) return notFound(res);
       const body = await parseJsonBody(req, res);
       if (!body) return;
       const text = `${body.title || existing.title} ${body.body || existing.body}`.trim();
       const embedding = await embed(text);
-      const record = upsertRecord(
+      const record = await db.upsert(
         {
           id,
           projectId: existing.project_id,
@@ -151,7 +143,7 @@ async function handleRequest(req, res) {
 
     // DELETE /api/records/:id
     if (method === 'DELETE' && id) {
-      const deleted = deleteRecord(id);
+      const deleted = await db.delete(id);
       if (!deleted) return notFound(res);
       return json(res, { ok: true });
     }
@@ -161,10 +153,10 @@ async function handleRequest(req, res) {
 }
 
 export async function startWebServer() {
-  await initDb();
+  const db = await initDb();
   const port = Number(process.env.DUDE_PORT) || 3456;
   const server = createServer((req, res) => {
-    handleRequest(req, res).catch(err => {
+    handleRequest(db, req, res).catch(err => {
       console.error('[dude] Request error:', err);
       json(res, { error: 'Internal server error' }, 500);
     });

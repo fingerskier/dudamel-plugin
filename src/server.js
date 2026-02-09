@@ -2,19 +2,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { embed } from './embed.js';
-import {
-  initDb,
-  getCurrentProject,
-  searchRecords,
-  upsertRecord,
-  getRecord,
-  listRecords,
-  listProjects,
-  deleteRecord,
-} from './db.js';
+import { initDb } from './db.js';
 
 export async function startServer() {
-  await initDb();
+  const db = await initDb();
 
   const server = new McpServer({
     name: 'dude',
@@ -34,7 +25,7 @@ export async function startServer() {
     async ({ query, kind, project, limit }) => {
       try {
         const embedding = await embed(query);
-        const results = searchRecords(embedding, { kind, limit });
+        const results = await db.search(embedding, { kind, limit });
         return {
           content: [{ type: 'text', text: JSON.stringify(results, null, 2) }],
         };
@@ -60,8 +51,9 @@ export async function startServer() {
       try {
         const text = `${title} ${body || ''}`.trim();
         const embedding = await embed(text);
-        const record = upsertRecord(
-          { id, projectId: getCurrentProject().id, kind, title, body: body || '', status: status || 'open' },
+        const project = await db.getCurrentProject();
+        const record = await db.upsert(
+          { id, projectId: project.id, kind, title, body: body || '', status: status || 'open' },
           embedding,
         );
         const action = id ? 'Updated' : 'Saved';
@@ -85,7 +77,7 @@ export async function startServer() {
     },
     async ({ id }) => {
       try {
-        const record = getRecord(id);
+        const record = await db.get(id);
         if (!record) {
           return { content: [{ type: 'text', text: `Record ${id} not found.` }], isError: true };
         }
@@ -110,7 +102,7 @@ export async function startServer() {
     },
     async ({ kind, status, project }) => {
       try {
-        const records = listRecords({ kind, status, project });
+        const records = await db.list({ kind, status, project });
         return {
           content: [{ type: 'text', text: JSON.stringify(records, null, 2) }],
         };
@@ -130,7 +122,7 @@ export async function startServer() {
     },
     async ({ id }) => {
       try {
-        const deleted = deleteRecord(id);
+        const deleted = await db.delete(id);
         return {
           content: [{ type: 'text', text: deleted ? `Record ${id} deleted.` : `Record ${id} not found.` }],
         };
@@ -148,7 +140,7 @@ export async function startServer() {
     {},
     async () => {
       try {
-        const projects = listProjects();
+        const projects = await db.listProjects();
         return {
           content: [{ type: 'text', text: JSON.stringify(projects, null, 2) }],
         };
