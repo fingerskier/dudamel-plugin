@@ -7,7 +7,7 @@
  */
 
 import { embed } from '../src/embed.js';
-import { initDb, searchRecords, getCurrentProject, getRecentRecords } from '../src/db.js';
+import { initDb } from '../src/db.js';
 
 try {
   const chunks = [];
@@ -21,15 +21,15 @@ try {
     process.exit(0);
   }
 
-  await initDb();
-  const project = getCurrentProject();
+  const db = await initDb();
+  const project = await db.getCurrentProject();
 
   // 1) Project identification
   process.stdout.write(`[dude] Project: ${project.name} (id=${project.id})\n`);
 
   // 2) Recently updated records
   const recencyWindow = Number(process.env.DUDE_RECENCY_HOURS) || 1;
-  const recentRecords = getRecentRecords(project.id, recencyWindow);
+  const recentRecords = await db.getRecentRecords(project.id, recencyWindow);
   if (recentRecords.length > 0) {
     const recentLines = ['[dude] Recently updated records:'];
     for (const r of recentRecords) {
@@ -41,7 +41,7 @@ try {
   // 3) Semantic search
   const embedding = await embed(prompt);
   const limit = Number(process.env.DUDE_CONTEXT_LIMIT) || 5;
-  const results = searchRecords(embedding, { limit });
+  const results = await db.search(embedding, { limit });
 
   if (results.length > 0) {
     const lines = ['[dude] Relevant context from memory:'];
