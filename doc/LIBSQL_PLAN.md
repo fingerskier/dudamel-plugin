@@ -362,13 +362,13 @@ During Phase 1–3 (both backends coexist), all four packages are present. After
 
 ## Rollout Summary
 
-| Phase | Version Bump | User Impact | Risk |
-|-------|-------------|------------|------|
-| 1. Abstract DB layer | patch | Zero — refactor only | Low |
-| 2. Implement libsql backend | minor | Zero — not yet active | Low |
-| 3. Migration script | (bundled with 4) | Zero — not yet wired up | Medium |
-| 4. Auto-migration on upgrade | **major** | One-time pause on first run; old DB kept as `.backup` | Medium |
-| 5. Cloud sync opt-in | minor | Zero — only activates with env vars | Low |
+| Phase | Version Bump | User Impact | Risk | Status |
+|-------|-------------|------------|------|--------|
+| 1. Abstract DB layer | patch | Zero — refactor only | Low | **DONE** |
+| 2. Implement libsql backend | minor | Zero — not yet active | Low | TODO |
+| 3. Migration script | (bundled with 4) | Zero — not yet wired up | Medium | TODO |
+| 4. Auto-migration on upgrade | **major** | One-time pause on first run; old DB kept as `.backup` | Medium | TODO |
+| 5. Cloud sync opt-in | minor | Zero — only activates with env vars | Low | TODO |
 
 ---
 
