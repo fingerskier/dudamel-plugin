@@ -215,6 +215,7 @@ const db = createClient({
 
 **Risk:** Low — new code, not yet wired in as default.
 
+
 ### Phase 3: Data Migration Script
 
 **Goal:** Migrate existing `~/.dude-claude/dude.db` data (including embeddings) to the libsql schema.
@@ -278,6 +279,7 @@ async function migrate(oldDbPath, newDbPath) {
 - Test with records missing embeddings (orphaned record rows)
 
 **Risk:** Medium — data fidelity must be validated.
+
 
 ### Phase 4: Backend Selection + Auto-Migration
 
