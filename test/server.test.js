@@ -5,16 +5,19 @@ vi.mock('../src/embed.js', () => ({
   embed: vi.fn(async () => new Float32Array(384)),
 }));
 
-// Mock db.js
+// Mock db.js — initDb must return an adapter-shaped object
+const mockDb = {
+  search: vi.fn(async () => []),
+  getCurrentProject: vi.fn(async () => ({ id: 1, name: 'test-project' })),
+  upsert: vi.fn(async (fields) => ({ id: fields.id || 1, ...fields })),
+  get: vi.fn(async (id) => (id === 999 ? null : { id, kind: 'issue', title: 'Test', status: 'open' })),
+  list: vi.fn(async () => []),
+  delete: vi.fn(async (id) => id !== 999),
+  listProjects: vi.fn(async () => [{ id: 1, name: 'test-project' }]),
+};
+
 vi.mock('../src/db.js', () => ({
-  initDb: vi.fn(async () => ({})),
-  getCurrentProject: vi.fn(() => ({ id: 1, name: 'test-project' })),
-  searchRecords: vi.fn(() => []),
-  upsertRecord: vi.fn((fields) => ({ id: 1, ...fields })),
-  getRecord: vi.fn((id) => (id === 999 ? null : { id, kind: 'issue', title: 'Test', status: 'open' })),
-  listRecords: vi.fn(() => []),
-  listProjects: vi.fn(() => [{ id: 1, name: 'test-project' }]),
-  deleteRecord: vi.fn((id) => id !== 999),
+  initDb: vi.fn(async () => mockDb),
 }));
 
 // Capture registered tools
@@ -79,19 +82,17 @@ describe('server.js', () => {
   });
 
   describe('tool handlers', () => {
-    it('search should call embed and searchRecords', async () => {
+    it('search should call embed and db.search', async () => {
       const { embed } = await import('../src/embed.js');
-      const db = await import('../src/db.js');
 
       const result = await toolHandlers.search({ query: 'test query' });
       expect(embed).toHaveBeenCalledWith('test query');
-      expect(db.searchRecords).toHaveBeenCalled();
+      expect(mockDb.search).toHaveBeenCalled();
       expect(result.content[0].type).toBe('text');
     });
 
     it('search should return error on failure', async () => {
-      const db = await import('../src/db.js');
-      db.searchRecords.mockImplementationOnce(() => { throw new Error('DB failure'); });
+      mockDb.search.mockRejectedValueOnce(new Error('DB failure'));
 
       const result = await toolHandlers.search({ query: 'bad query' });
       expect(result.isError).toBe(true);
@@ -100,7 +101,6 @@ describe('server.js', () => {
 
     it('upsert_record should create a record', async () => {
       const { embed } = await import('../src/embed.js');
-      const db = await import('../src/db.js');
 
       const result = await toolHandlers.upsert_record({
         kind: 'issue',
@@ -110,7 +110,7 @@ describe('server.js', () => {
       });
 
       expect(embed).toHaveBeenCalled();
-      expect(db.upsertRecord).toHaveBeenCalled();
+      expect(mockDb.upsert).toHaveBeenCalled();
       expect(result.content[0].text).toContain('Saved');
     });
 
